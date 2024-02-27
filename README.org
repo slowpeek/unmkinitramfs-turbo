@@ -1,0 +1,76 @@
+* Files
+- unmkinitramfs :: The original tool with =-s, --scan= option added
+- unmkinitramfs-turbo :: The improved tool. Runs on =bash=, requires =xxd=
+
+* Scan mode
+
+The =-s, --scan= option makes it not unpack anything, but print calculated
+=offset= and =size= of embedded cpio archives. For the last entry only =offset=
+is printed. The calculation step is the only non-trivial part in unpacking
+initrd. Sample run:
+
+#+begin_example
+  > ./unmkinitramfs -s initrd/ubuntu-22.04.4 _
+  0 77312
+  77312 7208960
+  7286272
+#+end_example
+
+* Performance boost
+
+Generic initrd contains some uncompressed cpio archives plus the last one
+compressed. Since there is no /archive size/ header for cpio, the scripts have
+to parse headers of each file in uncompressed ones.
+
+The original tool works well when the uncompressed archives contain a few
+files. But it gets really slow when there are lots. For example, initrd of
+ubuntu 22.04.4 contains two uncompressed cpio, each holding a single file (amd
+and intel microcode). Both tools are quick:
+
+#+begin_example
+  > time ./unmkinitramfs -s initrd/ubuntu-22.04.4 _
+  0 77312
+  77312 7208960
+  7286272
+
+  real    0m0.234s
+  user    0m0.314s
+  sys 0m0.105s
+
+  > time ./unmkinitramfs-turbo -s initrd/ubuntu-22.04.4 _
+  0 77312
+  77312 7208960
+  7286272
+
+  real    0m0.096s
+  user    0m0.107s
+  sys 0m0.026s
+#+end_example
+
+In initrd of ubuntu 23.10.1 there is one extra uncompressed archive, containing
+kernel modules and firmware files, 1985 files overall. This time the story is
+different:
+
+#+begin_example
+  > time ./unmkinitramfs -s initrd/ubuntu-23.10.1 _
+  0 77312
+  77312 7200768
+  7278080 78615040
+  85893120
+
+  real    0m15.453s
+  user    0m20.199s
+  sys 0m6.260s
+
+  > time ./unmkinitramfs-turbo -s initrd/ubuntu-23.10.1 _
+  0 77312
+  77312 7200768
+  7278080 78615040
+  85893120
+
+  real    0m1.418s
+  user    0m1.772s
+  sys 0m0.512s
+#+end_example
+
+The turbo tool turns out to be an order of magnitude faster in this case.
