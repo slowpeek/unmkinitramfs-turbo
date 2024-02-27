@@ -165,7 +165,7 @@ while true; do
 		cpio_opts="${cpio_opts:+${cpio_opts} --list}"
 		expected_args=1
 		shift
-		;;
+	;;
 	-s|--scan)
 		scan=y
 		shift
