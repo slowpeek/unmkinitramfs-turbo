@@ -1,0 +1,200 @@
+#!/usr/bin/env bash
+# -*- indent-tabs-mode: t; tab-width: 4; -*-
+
+set -eu
+
+usage()
+{
+	cat << EOF
+
+Usage: unmkinitramfs [-v] initramfs-file directory
+
+Options:
+  -v   Display verbose messages about extraction
+
+See unmkinitramfs(8) for further details.
+
+EOF
+}
+
+usage_error()
+{
+	usage >&2
+	exit 2
+}
+
+# Extract a compressed cpio archive
+xcpio()
+{
+	archive="$1"
+	dir="$2"
+	shift 2
+
+	if gzip -t "$archive" >/dev/null 2>&1 ; then
+		gzip -c -d "$archive"
+	elif zstd -q -c -t "$archive" >/dev/null 2>&1 ; then
+		zstd -q -c -d "$archive"
+	elif xzcat -t "$archive" >/dev/null 2>&1 ; then
+		xzcat "$archive"
+	elif lz4cat -t < "$archive" >/dev/null 2>&1 ; then
+		lz4cat "$archive"
+	elif bzip2 -t "$archive" >/dev/null 2>&1 ; then
+		bzip2 -c -d "$archive"
+	elif lzop -t "$archive" >/dev/null 2>&1 ; then
+		lzop -c -d "$archive"
+	# Ignoring other data, which may be garbage at the end of the file
+	fi | (
+		if [ -n "$dir" ]; then
+			mkdir -p -- "$dir"
+			cd -- "$dir"
+		fi
+		cpio "$@"
+	)
+}
+
+# Convert 16 bytes from stdin in 'xxd -r -p' fashion, save into hex8
+read_decode_hex8()
+{
+	local x
+	read -r -N16 x
+	printf -v hex8 '%b' \
+		   "\\x${x:0:2}\\x${x:2:2}\\x${x:4:2}\\x${x:6:2}" \
+		   "\\x${x:8:2}\\x${x:10:2}\\x${x:12:2}\\x${x:14:2}"
+}
+
+# Split an initramfs into archives and call xcpio on each
+splitinitramfs()
+{
+	initramfs="$1"
+	dir="$2"
+	shift 2
+
+	count=0
+	start=0
+	prefetched=n
+	while true; do
+		# There may be prepended uncompressed archives.  cpio
+		# won't tell us the true size of these so we have to
+		# parse the headers and padding ourselves.  This is
+		# very roughly based on linux/lib/earlycpio.c
+		end=$start
+		while true; do
+			[ "$prefetched" = y ] || read -r -N2 c
+			if [ "$c" = 00 ]; then
+				# This is the EOF marker.  There might
+				# be more zero padding before the next
+				# archive, so read through all of it.
+				while [ "$c" = 00 ]; do
+					(( end += 4 ))
+					read -r -N6 _
+					read -r -N2 c
+				done
+				prefetched=y
+				break
+			fi
+			prefetched=n
+			read -r -N10 magic; magic=$c$magic
+			test "$magic" = 303730373031 || test "$magic" = 303730373032 || break
+			read -r -N96 _; read_decode_hex8; filesize=0x$hex8
+			read -r -N64 _; read_decode_hex8; namesize=0x$hex8
+			(( end += 110 ))
+			end1=$end
+			(( end = ((end + namesize + 3) & ~3) ))
+			(( end = ((end + filesize + 3) & ~3) ))
+			(( skip = 2*(8 + end - end1) ))
+			if (( skip > 150000 )); then
+				head -c "$skip" >/dev/null
+			else
+				read -r -N "$skip" _
+			fi
+		done
+		if [ $end -eq $start ]; then
+			break
+		fi
+
+		if [ "$scan" = n ]; then
+			# Extract to early, early2, ... subdirectories
+			count=$((count + 1))
+			if [ $count -eq 1 ]; then
+				subdir=early
+			else
+				subdir=early$count
+			fi
+			dd < "$initramfs" skip=$start count=$((end - start)) iflag=skip_bytes 2> /dev/null |
+				(
+					# shellcheck disable=SC2030
+					if [ -n "$dir" ]; then
+						mkdir -p -- "$dir/$subdir"
+						cd -- "$dir/$subdir"
+					fi
+					cpio -i "$@"
+				)
+		else
+			echo "$start" "$((end - start))"
+		fi
+
+		start=$end
+	done
+
+	if [ "$scan" = n ]; then
+		if [ "$end" -gt 0 ]; then
+			# Extract to main subdirectory
+			subarchive=$(mktemp "${TMPDIR:-/var/tmp}/unmkinitramfs_XXXXXX")
+			trap 'rm -f "$subarchive"' EXIT
+			dd < "$initramfs" skip="$end" iflag=skip_bytes 2> /dev/null \
+				> "$subarchive"
+			# shellcheck disable=SC2030,SC2031
+			xcpio "$subarchive" "${dir:+$dir/main}" -i "$@"
+		else
+			# Don't use subdirectories (for backward compatibility)
+			# shellcheck disable=SC2031
+			xcpio "$initramfs" "$dir" -i "$@"
+		fi
+	else
+		echo "$end"
+	fi
+}
+
+OPTIONS=$(getopt -o hsv --long help,list,scan,verbose -n "$0" -- "$@") || usage_error
+
+cpio_opts="--preserve-modification-time --no-absolute-filenames --quiet"
+expected_args=2
+eval set -- "$OPTIONS"
+
+scan=n
+while true; do
+	case "$1" in
+        -h|--help)
+		usage
+		exit 0
+	;;
+	--list)
+		# For lsinitramfs
+		cpio_opts="${cpio_opts:+${cpio_opts} --list}"
+		expected_args=1
+		shift
+		;;
+	-s|--scan)
+		scan=y
+		shift
+	;;
+	-v|--verbose)
+		cpio_opts="${cpio_opts:+${cpio_opts} --verbose}"
+		shift
+	;;
+	--)
+		shift
+		break
+	;;
+	*)
+		echo "Internal error!" >&2
+		exit 1
+	esac
+done
+
+if [ $# -ne $expected_args ]; then
+	usage_error
+fi
+
+# shellcheck disable=SC2086
+xxd -p "$1" | tr -d '\n' | splitinitramfs "$1" "${2:-}" $cpio_opts
