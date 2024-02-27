@@ -1,4 +1,5 @@
 #!/bin/sh
+# -*- indent-tabs-mode: t; tab-width: 4; -*-
 
 set -eu
 
@@ -103,46 +104,56 @@ splitinitramfs()
 			break
 		fi
 
-		# Extract to early, early2, ... subdirectories
-		count=$((count + 1))
-		if [ $count -eq 1 ]; then
-			subdir=early
-		else
-			subdir=early$count
-		fi
-		dd < "$initramfs" skip=$start count=$((end - start)) iflag=skip_bytes 2> /dev/null |
-		(
-			# shellcheck disable=SC2030
-			if [ -n "$dir" ]; then
-				mkdir -p -- "$dir/$subdir"
-				cd -- "$dir/$subdir"
+		if [ "$scan" = n ]; then
+			# Extract to early, early2, ... subdirectories
+			count=$((count + 1))
+			if [ $count -eq 1 ]; then
+				subdir=early
+			else
+				subdir=early$count
 			fi
-			cpio -i "$@"
-		)
+			dd < "$initramfs" skip=$start count=$((end - start)) iflag=skip_bytes 2> /dev/null |
+				(
+					# shellcheck disable=SC2030
+					if [ -n "$dir" ]; then
+						mkdir -p -- "$dir/$subdir"
+						cd -- "$dir/$subdir"
+					fi
+					cpio -i "$@"
+				)
+		else
+			echo "$start" "$((end - start))"
+		fi
+
 		start=$end
 	done
 
-	if [ "$end" -gt 0 ]; then
-		# Extract to main subdirectory
-		subarchive=$(mktemp "${TMPDIR:-/var/tmp}/unmkinitramfs_XXXXXX")
-		trap 'rm -f "$subarchive"' EXIT
-		dd < "$initramfs" skip="$end" iflag=skip_bytes 2> /dev/null \
-			> "$subarchive"
-		# shellcheck disable=SC2030,SC2031
-		xcpio "$subarchive" "${dir:+$dir/main}" -i "$@"
+	if [ "$scan" = n ]; then
+		if [ "$end" -gt 0 ]; then
+			# Extract to main subdirectory
+			subarchive=$(mktemp "${TMPDIR:-/var/tmp}/unmkinitramfs_XXXXXX")
+			trap 'rm -f "$subarchive"' EXIT
+			dd < "$initramfs" skip="$end" iflag=skip_bytes 2> /dev/null \
+				> "$subarchive"
+			# shellcheck disable=SC2030,SC2031
+			xcpio "$subarchive" "${dir:+$dir/main}" -i "$@"
+		else
+			# Don't use subdirectories (for backward compatibility)
+			# shellcheck disable=SC2031
+			xcpio "$initramfs" "$dir" -i "$@"
+		fi
 	else
-		# Don't use subdirectories (for backward compatibility)
-		# shellcheck disable=SC2031
-		xcpio "$initramfs" "$dir" -i "$@"
+		echo "$end"
 	fi
 }
 
-OPTIONS=$(getopt -o hv --long help,list,verbose -n "$0" -- "$@") || usage_error
+OPTIONS=$(getopt -o hsv --long help,list,scan,verbose -n "$0" -- "$@") || usage_error
 
 cpio_opts="--preserve-modification-time --no-absolute-filenames --quiet"
 expected_args=2
 eval set -- "$OPTIONS"
 
+scan=n
 while true; do
 	case "$1" in
         -h|--help)
@@ -153,6 +164,10 @@ while true; do
 		# For lsinitramfs
 		cpio_opts="${cpio_opts:+${cpio_opts} --list}"
 		expected_args=1
+		shift
+		;;
+	-s|--scan)
+		scan=y
 		shift
 	;;
 	-v|--verbose)
