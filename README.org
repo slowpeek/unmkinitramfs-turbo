@@ -109,67 +109,67 @@ Sample run results:
 | `od -vAn -tx2 ubuntu-22.04.4` | 12.035 ± 0.114 |  11.835 |  12.179 | 9.25 ± 0.09  |
 | `od -vAn -tx1 ubuntu-22.04.4` | 23.053 ± 0.239 |  22.677 |  23.379 | 17.72 ± 0.19 |
 
- The problem with =-txN, N>1= is =od= treats sequences of =N= bytes as a whole
- and prints those in native byte order. Example for an =amd64= machine:
+The problem with =-txN, N>1= is =od= treats sequences of =N= bytes as a whole
+and prints those in native byte order. Example for an =amd64= machine:
 
- #+begin_example
-   > echo -n 01234567 | od -vAn -tx4
-    33323130 37363534
- #+end_example
+#+begin_example
+  > echo -n 01234567 | od -vAn -tx4
+   33323130 37363534
+#+end_example
 
- The correct order can be forced with ~--endian=big~ option:
+The correct order can be forced with ~--endian=big~ option:
 
- #+begin_example
-   > echo -n 01234567 | od -vAn -tx4 --endian=big
-    30313233 34353637
- #+end_example
+#+begin_example
+  > echo -n 01234567 | od -vAn -tx4 --endian=big
+   30313233 34353637
+#+end_example
 
- But the option is a relatively new one, only [[https://github.com/coreutils/coreutils/commit/b370924c03adaef222859061c61be06fc30c9a3e][introduced]] in 2014. There is no
- such option in still supported ubuntu 14.04. On older /little endian/ systems
- one still can utilize the =-tx2= speed boost with help of =dd=:
+But the option is a relatively new one, only [[https://github.com/coreutils/coreutils/commit/b370924c03adaef222859061c61be06fc30c9a3e][introduced]] in 2014. There is no
+such option in still supported ubuntu 14.04. On older /little endian/ systems
+one still can utilize the =-tx2= speed boost with help of =dd=:
 
- #+begin_example
-   > echo -n 0123 | dd conv=swab 2>/dev/null | od -vAn -tx2
-    3031 3233
- #+end_example
+#+begin_example
+  > echo -n 0123 | dd conv=swab 2>/dev/null | od -vAn -tx2
+   3031 3233
+#+end_example
 
- Back to the best case of ~-tx8 --endian=big~. It is still not a drop-in
- replacement for =xxd -p=. When the data size is not a multiple of =N= and we
- use =-txN, N>1=, it gets padded with zeroes:
+Back to the best case of ~-tx8 --endian=big~. It is still not a drop-in
+replacement for =xxd -p=. When the data size is not a multiple of =N= and we use
+=-txN, N>1=, it gets padded with zeroes:
 
- #+begin_example
-   > echo -n 01235 | od -vAn -tx4 --endian=big
-    30313233 35000000
- #+end_example
+#+begin_example
+  > echo -n 01235 | od -vAn -tx4 --endian=big
+   30313233 35000000
+#+end_example
 
- So to make a correct dump one must know the data size ahead and take it into
- account. Such function wraps it up:
+So to make a correct dump one must know the data size ahead and take it into
+account. Such function wraps it up:
 
- #+begin_example
-   function xxdp_like_od() {
-       size=$(stat -c%s "$1")
-       (( residue = size % 8 ))
+#+begin_example
+  function xxdp_like_od() {
+      size=$(stat -c%s "$1")
+      (( residue = size % 8 ))
 
-       {
-           if (( residue )); then
-               od -vAn -tx1 -N"$residue"
-           fi
+      {
+          if (( residue )); then
+              od -vAn -tx1 -N"$residue"
+          fi
 
-           if (( size > residue )); then
-               od -vAn -tx8 --endian=big
-           fi
-       } <"$1"
-   }
- #+end_example
+          if (( size > residue )); then
+              od -vAn -tx8 --endian=big
+          fi
+      } <"$1"
+  }
+#+end_example
 
- Sample run:
+Sample run:
 
- #+begin_example
-   > head -c 27 /dev/zero >sample
-   > xxdp_like_od sample
-    00 00 00
+#+begin_example
+  > head -c 27 /dev/zero >sample
+  > xxdp_like_od sample
+  00 00 00
     0000000000000000 0000000000000000
-    0000000000000000
- #+end_example
+   0000000000000000
+#+end_example
 
- So, compared to =xxd=, =od= is slow and picky.
+So, compared to =xxd=, =od= is slow and picky.
