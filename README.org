@@ -107,7 +107,7 @@ account. Such function wraps it up:
 #+begin_example
   function xxdp_like_od() {
       size=$(stat -c%s "$1")
-      (( residue = size % 8 ))
+      (( residue = size % 8 )) || true
 
       {
           if (( residue )); then
