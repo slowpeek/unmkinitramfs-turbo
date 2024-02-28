@@ -18,6 +18,8 @@ initrd. Sample run:
 
 * Performance boost
 
+/The benchmarks are courtesy of [[https://github.com/sharkdp/hyperfine][hyperfine]]./
+
 Generic initrd contains some uncompressed cpio archives plus the last one
 compressed. Since there is no /archive size/ header for cpio, the scripts have
 to parse headers of each file in uncompressed ones.
@@ -27,53 +29,19 @@ files. But it gets really slow when there are lots. For example, initrd of
 ubuntu 22.04.4 contains two uncompressed cpio, each holding a single file (amd
 and intel microcode). Both tools are quick:
 
-#+begin_example
-  > time ./unmkinitramfs -s initrd/ubuntu-22.04.4 _
-  0 77312
-  77312 7208960
-  7286272
+| Command                                 | Mean [ms]   | Min [ms] | Max [ms] | Relative    |
+|-----------------------------------------+-------------+----------+----------+-------------|
+| `unmkinitramfs -s ubuntu-22.04.4`       | 227.0 ± 0.9 |    225.7 |    228.4 | 2.62 ± 0.12 |
+| `unmkinitramfs-turbo -s ubuntu-22.04.4` | 86.6 ± 4.0  |     78.9 |     99.2 | 1.00        |
 
-  real    0m0.234s
-  user    0m0.314s
-  sys 0m0.105s
-
-  > time ./unmkinitramfs-turbo -s initrd/ubuntu-22.04.4 _
-  0 77312
-  77312 7208960
-  7286272
-
-  real    0m0.096s
-  user    0m0.107s
-  sys 0m0.026s
-#+end_example
-
-In initrd of ubuntu 23.10.1 there is one extra uncompressed archive, containing
+In case of ubuntu 23.10.1. there is one extra uncompressed archive, containing
 kernel modules and firmware files, 1985 files overall. This time the story is
-different:
+different, the turbo tool turns out to be an order of magnitude faster:
 
-#+begin_example
-  > time ./unmkinitramfs -s initrd/ubuntu-23.10.1 _
-  0 77312
-  77312 7200768
-  7278080 78615040
-  85893120
-
-  real    0m15.453s
-  user    0m20.199s
-  sys 0m6.260s
-
-  > time ./unmkinitramfs-turbo -s initrd/ubuntu-23.10.1 _
-  0 77312
-  77312 7200768
-  7278080 78615040
-  85893120
-
-  real    0m1.418s
-  user    0m1.772s
-  sys 0m0.512s
-#+end_example
-
-The turbo tool turns out to be an order of magnitude faster in this case.
+| Command                                 | Mean [s]       | Min [s] | Max [s] | Relative     |
+|-----------------------------------------+----------------+---------+---------+--------------|
+| `unmkinitramfs -s ubuntu-23.10.1`       | 15.617 ± 0.085 |  15.553 |  15.845 | 10.39 ± 0.43 |
+| `unmkinitramfs-turbo -s ubuntu-23.10.1` | 1.503 ± 0.061  |   1.407 |   1.600 | 1.00         |
 
 * Performance boost explained
 
@@ -90,16 +58,7 @@ The turbo tool parses a hex dump of input data instead, with help of bash's
 First and foremost: =od= is slow.
 
 To dump in hex one uses =od -txN ..= where =N= could be 1, 2, 4 and 8. =N=
-greatly affects the speed, there is no reason to use any value below 8.
-
-One could benchmark the performance with such command (the input file is the
-initrd from ubuntu =22.04.4= desktop iso, the size is =137M=):
-
-#+begin_example
-  hyperfine 'xxd -p ubuntu-22.04.4' 'od -vAn -tx'{8,4,2,1}' ubuntu-22.04.4'
-#+end_example
-
-Sample run results:
+greatly affects the speed, there is no reason to use any value below 8:
 
 | Command                       | Mean [s]       | Min [s] | Max [s] | Relative     |
 |-------------------------------+----------------+---------+---------+--------------|
