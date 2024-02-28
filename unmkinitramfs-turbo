@@ -176,6 +176,7 @@ while true; do
 	;;
 	-s|--scan)
 		scan=y
+		expected_args=1
 		shift
 	;;
 	-v|--verbose)
