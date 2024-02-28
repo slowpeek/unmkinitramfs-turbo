@@ -90,53 +90,24 @@ The turbo tool parses a hex dump of input data instead, with help of bash's
 First and foremost: =od= is slow.
 
 To dump in hex one uses =od -txN ..= where =N= could be 1, 2, 4 and 8. =N=
-greatly affects the speed, there is no reason to use any value below 8. We can
-test it with such function:
+greatly affects the speed, there is no reason to use any value below 8.
+
+One could benchmark the performance with such command (the input file is the
+initrd from ubuntu =22.04.4= desktop iso, the size is =137M=):
 
 #+begin_example
-  bench_od_hex() {
-      for N in 1 2 4 8; do
-          echo N="$N"
-          time od -vAn -tx"$N" <"$1" >/dev/null
-          echo --------
-      done
-  }
+  hyperfine 'xxd -p ubuntu-22.04.4' 'od -vAn -tx'{8,4,2,1}' ubuntu-22.04.4'
 #+end_example
 
-Sample run:
+Sample run results:
 
-#+begin_example
-  > time xxd -p <initrd/ubuntu-22.04.4 >/dev/null
-
-  real    0m1.306s
-  user    0m1.262s
-  sys 0m0.044s
-  > bench_od_hex initrd/ubuntu-22.04.4
-  N=1
-
-  real    0m23.008s
-  user    0m22.939s
-  sys 0m0.069s
-  --------
-  N=2
-
-  real    0m11.996s
-  user    0m11.948s
-  sys 0m0.048s
-  --------
-  N=4
-
-  real    0m6.419s
-  user    0m6.366s
-  sys 0m0.052s
-  --------
-  N=8
-
-  real    0m3.611s
-  user    0m3.543s
-  sys 0m0.068s
-  --------
-#+end_example
+| Command                       | Mean [s]       | Min [s] | Max [s] | Relative     |
+|-------------------------------+----------------+---------+---------+--------------|
+| `xxd -p ubuntu-22.04.4`       | 1.301 ± 0.003  |   1.298 |   1.307 | 1.00         |
+| `od -vAn -tx8 ubuntu-22.04.4` | 3.553 ± 0.033  |   3.509 |   3.608 | 2.73 ± 0.03  |
+| `od -vAn -tx4 ubuntu-22.04.4` | 6.394 ± 0.049  |   6.316 |   6.470 | 4.92 ± 0.04  |
+| `od -vAn -tx2 ubuntu-22.04.4` | 12.035 ± 0.114 |  11.835 |  12.179 | 9.25 ± 0.09  |
+| `od -vAn -tx1 ubuntu-22.04.4` | 23.053 ± 0.239 |  22.677 |  23.379 | 17.72 ± 0.19 |
 
  The problem with =-txN, N>1= is =od= treats sequences of =N= bytes as a whole
  and prints those in native byte order. Example for an =amd64= machine:
