@@ -112,46 +112,48 @@ splitinitramfs()
 			break
 		fi
 
-		if [ "$scan" = n ]; then
-			# Extract to early, early2, ... subdirectories
-			count=$((count + 1))
-			if [ $count -eq 1 ]; then
-				subdir=early
-			else
-				subdir=early$count
-			fi
-			dd < "$initramfs" skip=$start count=$((end - start)) iflag=skip_bytes 2> /dev/null |
-				(
-					# shellcheck disable=SC2030
-					if [ -n "$dir" ]; then
-						mkdir -p -- "$dir/$subdir"
-						cd -- "$dir/$subdir"
-					fi
-					cpio -i "$@"
-				)
-		else
+		if [ "$scan" = y ]; then
 			echo "$start" "$((end - start))"
+			start=$end
+			continue
 		fi
 
+		# Extract to early, early2, ... subdirectories
+		count=$((count + 1))
+		if [ $count -eq 1 ]; then
+			subdir=early
+		else
+			subdir=early$count
+		fi
+		dd < "$initramfs" skip=$start count=$((end - start)) iflag=skip_bytes 2> /dev/null |
+		(
+			# shellcheck disable=SC2030
+			if [ -n "$dir" ]; then
+				mkdir -p -- "$dir/$subdir"
+				cd -- "$dir/$subdir"
+			fi
+			cpio -i "$@"
+		)
 		start=$end
 	done
 
-	if [ "$scan" = n ]; then
-		if [ "$end" -gt 0 ]; then
-			# Extract to main subdirectory
-			subarchive=$(mktemp "${TMPDIR:-/var/tmp}/unmkinitramfs_XXXXXX")
-			trap 'rm -f "$subarchive"' EXIT
-			dd < "$initramfs" skip="$end" iflag=skip_bytes 2> /dev/null \
-				> "$subarchive"
-			# shellcheck disable=SC2030,SC2031
-			xcpio "$subarchive" "${dir:+$dir/main}" -i "$@"
-		else
-			# Don't use subdirectories (for backward compatibility)
-			# shellcheck disable=SC2031
-			xcpio "$initramfs" "$dir" -i "$@"
-		fi
-	else
+	if [ "$scan" = y ]; then
 		echo "$end"
+		return
+	fi
+
+	if [ "$end" -gt 0 ]; then
+		# Extract to main subdirectory
+		subarchive=$(mktemp "${TMPDIR:-/var/tmp}/unmkinitramfs_XXXXXX")
+		trap 'rm -f "$subarchive"' EXIT
+		dd < "$initramfs" skip="$end" iflag=skip_bytes 2> /dev/null \
+			> "$subarchive"
+		# shellcheck disable=SC2030,SC2031
+		xcpio "$subarchive" "${dir:+$dir/main}" -i "$@"
+	else
+		# Don't use subdirectories (for backward compatibility)
+		# shellcheck disable=SC2031
+		xcpio "$initramfs" "$dir" -i "$@"
 	fi
 }
 
