@@ -117,7 +117,7 @@ splitinitramfs()
 		else
 			subdir=early$count
 		fi
-		dd < "$initramfs" skip=$start count=$((end - start)) iflag=skip_bytes 2> /dev/null |
+		dd < "$initramfs" skip=$start count=$((end - start)) iflag=skip_bytes,count_bytes 2> /dev/null |
 		(
 			# shellcheck disable=SC2030
 			if [ -n "$dir" ]; then
