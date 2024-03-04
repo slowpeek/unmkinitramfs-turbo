@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 
+# GPL v2 license
+# https://github.com/slowpeek/unmkinitramfs-turbo
+# https://launchpad.net/ubuntu/+source/initramfs-tools
+# https://salsa.debian.org/kernel-team/initramfs-tools
+
 set -eu -o pipefail
 
 if [[ -t 2 ]]; then

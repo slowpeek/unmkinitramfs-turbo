@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # -*- indent-tabs-mode: t; tab-width: 4; -*-
 
+# GPL v2 license
+# https://github.com/slowpeek/unmkinitramfs-turbo
+# https://launchpad.net/ubuntu/+source/initramfs-tools
+# https://salsa.debian.org/kernel-team/initramfs-tools
+
 set -eu
 
 usage()
