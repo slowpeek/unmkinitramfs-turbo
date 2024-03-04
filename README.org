@@ -1,6 +1,9 @@
 * Files
-- unmkinitramfs :: The original tool with =-s, --scan= option added
-- unmkinitramfs-turbo :: The improved tool. Runs on =bash=, requires =xxd=
+- unmkinitramfs-classic :: The original tool with =-s, --scan= option added
+- unmkinitramfs-classic-turbo :: The improved tool with minimal changes. Runs on
+  =bash=, requires =xxd=
+- unmkinitramfs-turbo :: The improved tool with many changes. Runs on =bash=,
+  requires =xxd= and =file=
 
 * Scan mode
 
@@ -10,7 +13,7 @@ is printed. The calculation step is the only non-trivial part in unpacking
 initrd. Sample run:
 
 #+begin_example
-  > ./unmkinitramfs -s initrd/ubuntu-22.04.4 _
+  > ./unmkinitramfs-classic -s initrd/ubuntu-22.04.4 _
   0 77312
   77312 7208960
   7286272
@@ -29,19 +32,19 @@ files. But it gets really slow when there are lots. For example, initrd of
 ubuntu 22.04.4 contains two uncompressed cpio, each holding a single file (amd
 and intel microcode). Both tools are quick:
 
-| Command                                 | Mean [ms]   | Min [ms] | Max [ms] | Relative    |
-|-----------------------------------------+-------------+----------+----------+-------------|
-| `unmkinitramfs -s ubuntu-22.04.4`       | 227.0 ± 0.9 |    225.7 |    228.4 | 2.62 ± 0.12 |
-| `unmkinitramfs-turbo -s ubuntu-22.04.4` | 86.6 ± 4.0  |     78.9 |     99.2 | 1.00        |
+| Command                                   | Mean [ms]   | Min [ms] | Max [ms] | Relative    |
+|-------------------------------------------+-------------+----------+----------+-------------|
+| `unmkinitramfs-classic -s ubuntu-22.04.4` | 227.0 ± 0.9 |    225.7 |    228.4 | 2.62 ± 0.12 |
+| `unmkinitramfs-turbo -s ubuntu-22.04.4`   | 86.6 ± 4.0  |     78.9 |     99.2 | 1.00        |
 
 In case of ubuntu 23.10.1. there is one extra uncompressed archive, containing
 kernel modules and firmware files, 1985 files overall. This time the story is
 different, the turbo tool turns out to be an order of magnitude faster:
 
-| Command                                 | Mean [s]       | Min [s] | Max [s] | Relative     |
-|-----------------------------------------+----------------+---------+---------+--------------|
-| `unmkinitramfs -s ubuntu-23.10.1`       | 15.617 ± 0.085 |  15.553 |  15.845 | 10.39 ± 0.43 |
-| `unmkinitramfs-turbo -s ubuntu-23.10.1` | 1.503 ± 0.061  |   1.407 |   1.600 | 1.00         |
+| Command                                   | Mean [s]       | Min [s] | Max [s] | Relative     |
+|-------------------------------------------+----------------+---------+---------+--------------|
+| `unmkinitramfs-classic -s ubuntu-23.10.1` | 15.617 ± 0.085 |  15.553 |  15.845 | 10.39 ± 0.43 |
+| `unmkinitramfs-turbo -s ubuntu-23.10.1`   | 1.503 ± 0.061  |   1.407 |   1.600 | 1.00         |
 
 * Performance boost explained
 
