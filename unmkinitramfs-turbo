@@ -1,0 +1,291 @@
+#!/usr/bin/env bash
+
+set -eu -o pipefail
+
+if [[ -t 2 ]]; then
+    t_red=$'\e[31m'
+    t_reset=$'\e(B\e[m'
+else
+    t_red=
+    t_reset=
+fi
+
+bye() {
+    echo "${t_red}error:${t_reset}" "$1" >&2
+    exit 1
+}
+
+usage() {
+    cat <<EOF
+Usage: unmkinitramfs-turbo [--verbose] --scan|--list initrd
+       unmkinitramfs-turbo [--verbose] [--extract] initrd dir
+
+Options:
+  -s, --scan    initrd       Show details about the embedded cpio archives
+  -l, --list    initrd       List files in the embedded cpio archives
+  -x, --extract initrd dir   Extract the embedded cpio archives into the
+                             dir. This is the default action
+
+  -h, --help                 Show usage
+  -v, --verbose              Pass --verbose flag to cpio
+
+Homepage https://github.com/slowpeek/unmkinitramfs-turbo
+EOF
+
+    exit
+}
+
+cpio_extract() {
+    local dir=$1
+    shift
+
+    if [[ -n $dir ]]; then
+        mkdir -p -- "$dir"
+        cd -- "$dir"
+    fi
+
+    cpio -i "$@"
+}
+
+# To be used in pipes. Run "$@", convert exit code 141 to 0
+sigpipe_ok() {
+    local _st=0
+    "$@" || _st=$?
+    [[ ! $_st == 141 ]] || _st=0
+    return "$_st"
+}
+
+in_path() {
+    type -P -- "$1" >/dev/null
+}
+
+# Upper: comp_format, comp_cmd
+detect_compressor() {
+    in_path file || bye 'The "file" tool is not installed'
+
+    local ftype
+    # 'file --mime-type' is useless. For example, it says lzop is
+    # application/octet-stream. Just rely on the default output
+    ftype=$(file -b - 2>/dev/null)
+    ftype=${ftype%% *}
+    ftype=${ftype,,}
+
+    comp_cmd=
+
+    case $ftype in
+        zstandard) comp_format=zstd;   comp_cmd=zstd ;;
+        lz4)       comp_format=lz4;    comp_cmd=lz4 ;;
+        lzma|xz)   comp_format=$ftype; comp_cmd=xz ;;
+        gzip)      comp_format=gzip;   comp_cmd=gzip ;;
+        lzop)      comp_format=lzop;   comp_cmd=lzop ;;
+        bzip2)     comp_format=bzip2;  comp_cmd=bzip2 ;;
+    esac
+
+    if [[ -n $comp_cmd ]] && ! in_path "$comp_cmd"; then
+        local error="${comp_cmd} is not installed"
+
+        # Try zstd for selected formats. Even though zstd could support lz4, it
+        # only works with the new lz4 format. Initrd of ubuntu 19.10 .. 21.04
+        # desktop iso uses the old format (lz4 -l). So just rule lz4 out
+        if [[ $comp_format == @(gzip|lzma|xz) ]] && in_path zstd; then
+            if zstd --help | grep -q -- "--format=${comp_format}"; then
+                comp_cmd=zstd
+                return
+            fi
+
+            error+=", and your zstd binary was compiled without support for ${comp_format}"
+        fi
+
+        bye "$error"
+    fi
+}
+
+# Convert 16 bytes from stdin in 'xxd -r -p' fashion, save into hex8
+read_decode_hex8() {
+    local x
+    read -r -N16 x
+    printf -v hex8 '%b' \
+           "\\x${x:0:2}\\x${x:2:2}\\x${x:4:2}\\x${x:6:2}" \
+           "\\x${x:8:2}\\x${x:10:2}\\x${x:12:2}\\x${x:14:2}"
+}
+
+progress_open() {
+    [[ $show_progress == n ]] || printf '%6s ..' "$1" >&2
+}
+
+progress_close() {
+    [[ $show_progress == n ]] || printf ' +\n' >&2
+}
+
+# Split an initramfs into archives and extract each
+splitinitramfs() {
+    local initramfs="$1" dir="$2" show_progress=n
+    shift 2
+
+    if [[ $action == extract && $cpio_verbose == n ]]; then
+        show_progress=y
+    fi
+
+    local count=0 start=0 prefetched=n magic filesize namesize subdir
+    while true; do
+        # There may be prepended uncompressed archives. cpio won't tell us the
+        # true size of these so we have to parse the headers and padding
+        # ourselves. This is very roughly based on linux/lib/earlycpio.c
+        end=$start
+        while true; do
+            [[ $prefetched == y ]] || read -r -N2 c
+
+            if [[ $c == 00 ]]; then
+                # This is the EOF marker. There might be more zero padding
+                # before the next archive, so read through all of it.
+                while [ "$c" = 00 ]; do
+                    (( end += 4 ))
+                    read -r -N6 _
+                    read -r -N2 c
+                done
+
+                prefetched=y
+                break
+            fi
+
+            prefetched=n
+
+            read -r -N10 magic; magic=$c$magic
+            [[ $magic == 303730373031 || $magic == 303730373032 ]] || break
+
+            read -r -N96 _; read_decode_hex8; filesize=0x$hex8
+            read -r -N64 _; read_decode_hex8; namesize=0x$hex8
+
+            (( end += 110 ))
+            end1=$end
+            (( end = ((end + namesize + 3) & ~3) ))
+            (( end = ((end + filesize + 3) & ~3) ))
+            (( skip = 2*(8 + end - end1) ))
+
+            if (( skip > 150000 )); then
+                head -c "$skip" >/dev/null
+            else
+                read -r -N "$skip" _
+            fi
+        done
+
+        (( end > start )) || break
+
+        if [[ $action == scan ]]; then
+            echo "$start" "$((end - start))"
+        else
+            # Extract to early, early2, ... subdirectories
+            subdir=early
+            (( ! count++ )) || subdir+=$count
+
+            progress_open "$subdir"
+
+            # sigpipe_ok: for the case of cpio not exhausting the whole input
+            sigpipe_ok dd status=none skip="$start" count="$((end - start))" iflag=skip_bytes,count_bytes <"$initramfs" |
+                cpio_extract "${dir:+$dir/$subdir}" "$@"
+
+            progress_close
+        fi
+
+        start=$end
+    done
+
+    if [[ $action = scan ]]; then
+        echo "$end"
+    else
+        local target_dir
+
+        if (( end )); then
+            # Extract to main subdirectory
+            target_dir=${dir:+$dir/main}
+        else
+            # Don't use subdirectories (for backward compatibility)
+            target_dir=$dir
+        fi
+
+        local comp_format comp_cmd
+        # 512 bytes is enough to detect
+        detect_compressor < <(dd status=none skip="$end" count=1 iflag=skip_bytes <"$initramfs")
+
+        if [[ -n $comp_cmd ]]; then
+            progress_open 'main'
+
+            # sigpipe_ok: for the case of cpio not exhausting the whole input
+            sigpipe_ok dd status=none skip="$end" iflag=skip_bytes <"$initramfs" |
+                sigpipe_ok "$comp_cmd" -q -dc |
+                cpio_extract "$target_dir" "$@"
+
+            progress_close
+        fi
+
+        # Ignoring other data, which may be garbage at the end of the file
+    fi
+}
+
+main() {
+    local opts
+
+    # jetopt hhelp llist sscan xextract vverbose
+    opts=$(getopt -o hlsxv -l help,list,scan,extract,verbose -- "$@") || exit
+    eval set -- "$opts"
+
+    local cpio_opts=(
+        --preserve-modification-time
+        --no-absolute-filenames
+        --quiet
+    )
+
+    local action nargs cpio_verbose=n
+
+    while (( $# )); do
+        case $1 in
+            -h|--help)
+                usage ;;
+
+            -l|--list)
+                cpio_opts+=(--list)
+                action=list
+                nargs=1
+                shift ;;
+
+            -s|--scan)
+                action=scan
+                nargs=1
+                shift ;;
+
+            -x|--extract)
+                action=extract
+                nargs=2
+                shift ;;
+
+            -v|--verbose)
+                cpio_verbose=y
+                cpio_opts+=(--verbose)
+                shift ;;
+
+            --)
+                shift
+                break ;;
+        esac
+    done
+
+    if [[ ! -v action ]]; then
+        # No args, show usage
+        (( $# )) || usage
+
+        # Some args present, assume --extract
+        action=extract
+        nargs=2
+    fi
+
+    [[ $# == "$nargs" ]] || bye "--${action} expects ${nargs} arg(s), $# provided"
+
+    in_path xxd || bye 'xxd is not installed'
+
+    # sigpipe_ok: we only read xxd output till the start of the last archive
+    sigpipe_ok xxd -p "$1" |
+        sigpipe_ok tr -d '\n' |
+        splitinitramfs "$1" "${2:-}" "${cpio_opts[@]}"
+}
+
+[[ ! ${BASH_SOURCE[0]##*/} == "${0##*/}" ]] || main "$@"
