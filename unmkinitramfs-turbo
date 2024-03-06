@@ -71,22 +71,27 @@ detect_compressor() {
     local ftype
     # 'file --mime-type' is useless. For example, it says lzop is
     # application/octet-stream. Just rely on the default output
-    ftype=$(file -b - 2>/dev/null)
+    ftype=$(dd status=none if="$1" skip="$2" count=1 iflag=skip_bytes | file -b - 2>/dev/null)
     ftype=${ftype%% *}
     ftype=${ftype,,}
 
+    comp_format=
     comp_cmd=
 
     case $ftype in
         zstandard) comp_format=zstd;   comp_cmd=zstd ;;
         lz4)       comp_format=lz4;    comp_cmd=lz4 ;;
-        lzma|xz)   comp_format=$ftype; comp_cmd=xz ;;
+        lzma)      comp_format=lzma;   comp_cmd=lzma ;;
         gzip)      comp_format=gzip;   comp_cmd=gzip ;;
+        xz)        comp_format=xz;     comp_cmd=xz ;;
         lzop)      comp_format=lzop;   comp_cmd=lzop ;;
         bzip2)     comp_format=bzip2;  comp_cmd=bzip2 ;;
     esac
+}
 
-    if [[ -n $comp_cmd ]] && ! in_path "$comp_cmd"; then
+# Upper: comp_format, comp_cmd
+check_compressor() {
+    if ! in_path "$comp_cmd"; then
         local error="${comp_cmd} is not installed"
 
         # Try zstd for selected formats. Even though zstd could support lz4, it
@@ -209,10 +214,10 @@ splitinitramfs() {
         fi
 
         local comp_format comp_cmd
-        # 512 bytes is enough to detect
-        detect_compressor < <(dd status=none skip="$end" count=1 iflag=skip_bytes <"$initramfs")
+        detect_compressor "$initramfs" "$end"
 
         if [[ -n $comp_cmd ]]; then
+            check_compressor
             progress_open 'main'
 
             # sigpipe_ok: for the case of cpio not exhausting the whole input
