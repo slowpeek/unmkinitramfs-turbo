@@ -19,6 +19,16 @@ initrd. Sample run:
   7286272
 #+end_example
 
+=unmkinitramfs-turbo=, given more than one =-s= option (=-ss= for short),
+additionally prints the chunk format:
+
+#+begin_example
+  > unmkinitramfs-turbo -ss initrd/ubuntu-22.04.4
+  cpio   0 77312
+  cpio   77312 7208960
+  zstd   7286272
+#+end_example
+
 * Performance boost
 
 /The benchmarks are courtesy of [[https://github.com/sharkdp/hyperfine][hyperfine]]./
