@@ -1,4 +1,7 @@
-* Files
+* About
+
+This repo provides improved =unmkinitramfs= from [[https://salsa.debian.org/kernel-team/initramfs-tools][Debian]]/[[https://launchpad.net/ubuntu/+source/initramfs-tools][Ubuntu]]:
+
 - unmkinitramfs-classic :: The original tool with =-s, --scan= option added
 - unmkinitramfs-classic-turbo :: The improved tool with minimal changes. Runs on
   =bash=, requires =xxd=
