@@ -26,7 +26,10 @@ Usage: unmkinitramfs-turbo [--verbose] --scan|--list initrd
        unmkinitramfs-turbo [--verbose] [--extract] initrd dir
 
 Options:
-  -s, --scan    initrd       Show details about the embedded cpio archives
+  -s, --scan    initrd       Show details about the embedded cpio archives. Use
+                             it twice (-ss for short) to additionally print the
+                             chunk format
+
   -l, --list    initrd       List files in the embedded cpio archives
   -x, --extract initrd dir   Extract the embedded cpio archives into the
                              dir. This is the default action
@@ -182,6 +185,7 @@ splitinitramfs() {
         (( end > start )) || break
 
         if [[ $action == scan ]]; then
+            (( scan_level < 2 )) || printf '%-6s ' cpio
             echo "$start" "$((end - start))"
         else
             # Extract to early, early2, ... subdirectories
@@ -201,6 +205,12 @@ splitinitramfs() {
     done
 
     if [[ $action = scan ]]; then
+        if (( scan_level > 1 )); then
+            local comp_format comp_cmd
+            detect_compressor "$initramfs" "$end"
+            printf '%-6s ' "${comp_format:---}"
+        fi
+        
         echo "$end"
     else
         local target_dir
@@ -245,7 +255,7 @@ main() {
         --quiet
     )
 
-    local action nargs cpio_verbose=n
+    local action nargs cpio_verbose=n scan_level=0
 
     while (( $# )); do
         case $1 in
@@ -260,6 +270,7 @@ main() {
 
             -s|--scan)
                 action=scan
+                (( ++scan_level ))
                 nargs=1
                 shift ;;
 
