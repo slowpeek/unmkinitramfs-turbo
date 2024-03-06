@@ -58,9 +58,9 @@ different, the turbo tool turns out to be an order of magnitude faster:
 
 * Performance boost explained
 
-The original tool is limited to external tools to parse binary input data.
+The original tool is limited to external commands to parse binary input data.
 
-The turbo tool parses a hex dump of input data instead, with help of bash's
+The turbo tools parse a hex dump of input data instead, with help of bash's
 =read -N= to process data in chunks, all in a single pass.
 
 * Why xxd, not od from coreutils
