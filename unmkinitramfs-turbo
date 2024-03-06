@@ -5,6 +5,9 @@
 # https://launchpad.net/ubuntu/+source/initramfs-tools
 # https://salsa.debian.org/kernel-team/initramfs-tools
 
+# References
+# - https://www.kernel.org/doc/html/latest/driver-api/early-userspace/buffer-format.html
+
 set -eu -o pipefail
 
 if [[ -t 2 ]]; then

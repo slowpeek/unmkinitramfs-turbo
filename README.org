@@ -37,7 +37,7 @@ additionally prints the chunk format:
 /The benchmarks are courtesy of [[https://github.com/sharkdp/hyperfine][hyperfine]]./
 
 Generic initrd contains some uncompressed cpio archives plus the last one
-compressed. Since there is no /archive size/ header for cpio, the scripts have
+compressed. Since there is no /archive size/ header for [[https://www.kernel.org/doc/html/latest/driver-api/early-userspace/buffer-format.html][cpio]], the scripts have
 to parse headers of each file in uncompressed ones.
 
 The original tool works well when the uncompressed archives contain a few
