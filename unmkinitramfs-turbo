@@ -142,7 +142,8 @@ splitinitramfs() {
         show_progress=y
     fi
 
-    local count=0 start=0 prefetched=n magic filesize namesize subdir
+    local c prefetched=n magic hex8 filesize namesize
+    local count=0 start=0 end end1 skip subdir
     while true; do
         # There may be prepended uncompressed archives. cpio won't tell us the
         # true size of these so we have to parse the headers and padding
