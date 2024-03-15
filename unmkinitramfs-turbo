@@ -95,21 +95,40 @@ detect_compressor() {
     esac
 }
 
+7za_bzip2_dc() { 7za e -tbzip2 -si -so 2>/dev/null; }
+7za_gzip_dc() { 7za e -tgzip -si -so 2>/dev/null; }
+7za_lzma_dc() { 7za e -tlzma -si -so 2>/dev/null; }
+7za_xz_dc() { 7za e -txz -si -so 2>/dev/null; }
+
 # Upper: comp_format, comp_cmd
 check_compressor() {
     if ! in_path "$comp_cmd"; then
         local error="${comp_cmd} is not installed"
 
+        # Try 7za for selected formats
+        if [[ $comp_format == @(bzip2|gzip|lzma|xz) ]]; then
+            if in_path 7za; then
+                comp_cmd=7za_${comp_format}_dc
+                return
+            else
+                error+=', nor is 7za'
+            fi
+        fi
+
         # Try zstd for selected formats. Even though zstd could support lz4, it
         # only works with the new lz4 format. Initrd of ubuntu 19.10 .. 21.04
         # desktop iso uses the old format (lz4 -l). So just rule lz4 out
-        if [[ $comp_format == @(gzip|lzma|xz) ]] && in_path zstd; then
-            if zstd --help | grep -q -- "--format=${comp_format}"; then
-                comp_cmd=zstd
-                return
-            fi
+        if [[ $comp_format == @(gzip|lzma|xz) ]]; then
+            if in_path zstd; then
+                if zstd --help | grep -q -- "--format=${comp_format}"; then
+                    comp_cmd=zstd
+                    return
+                fi
 
-            error+=", and your zstd binary was compiled without support for ${comp_format}"
+                error+=", and your zstd binary lacks ${comp_format} support"
+            else
+                error+=', nor is zstd'
+            fi
         fi
 
         bye "$error"
