@@ -1,3 +1,9 @@
+* Important notice
+
+Since ubuntu 24.10, there is the [[https://github.com/bdrung/3cpio][3cpio]] tool, which is used by unmkinitramfs, if
+available, to speed things up. It was created in response to my bug [[https://bugs.launchpad.net/ubuntu/+source/initramfs-tools/+bug/2059976][report]] about
+unmkinitramfs being too slow.
+
 * About
 
 This repo provides improved =unmkinitramfs= from [[https://salsa.debian.org/kernel-team/initramfs-tools][Debian]]/[[https://launchpad.net/ubuntu/+source/initramfs-tools][Ubuntu]]:
